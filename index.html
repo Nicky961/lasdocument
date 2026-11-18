@@ -199,7 +199,7 @@ input[type="file"]{display:none}
 
 /* ---------- handtekening ---------- */
 .sigwrap{border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg);overflow:hidden}
-canvas#sig{display:block;width:100%;height:150px;touch-action:none;cursor:crosshair}
+.sigwrap canvas{display:block;width:100%;height:150px;touch-action:none;cursor:crosshair}
 .sigwrap img{display:block;width:100%;max-height:150px;object-fit:contain;background:var(--bg)}
 .sigbar{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-top:1px solid var(--border);font-size:12px;color:var(--text-faint)}
 .sigbar button{font:inherit;font-size:12.5px;background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:4px 2px}
@@ -459,10 +459,13 @@ let myUid = null, isAdmin = false, editingPath = null, photosLocal = false;
 const formUnsubs = {}, perUser = {};
 let capsReady = false;
 let pendingPhotoKey = null;
-let sigDirty = false, sigData = null;
+/* Twee tekenvakken: "sig" = paraaf LTH (Bijlage 4), "sig2" = handtekening
+   PE lasser NTA 8828 (op alle PDF's). Per vak: getekend? + laatste tekening. */
+const sigSt = {sig:{dirty:false, data:null}, sig2:{dirty:false, data:null}};
+function resetSigs(){ for(const k in sigSt){ sigSt[k].dirty = false; sigSt[k].data = null; } }
 
 function blankModel(){
-  const m = {fotos:{}, paraaf:null, status:"concept"};
+  const m = {fotos:{}, paraaf:null, handtekening:null, status:"concept"};
   TEXTFIELDS.forEach(f => m[f.id] = "");
   CHECKS.forEach(c => m[c.id] = "");
   m.verklaring = "";
@@ -873,19 +876,27 @@ function lasHtml(l, i){
   </section>`;
 }
 
-function sigHtml(){
-  const done = !!model.paraaf;
+function sigHtml(id, field, title, hint, doneTxt){
+  const val = model[field];
   return `<div class="field">
-    <div class="q">Paraaf LTH</div>
-    <p class="hint">De LTH parafeert nadat hij de las visueel geïnspecteerd heeft en akkoord is met het eindresultaat.</p>
+    <div class="q">${esc(title)}</div>
+    ${hint ? `<p class="hint">${esc(hint)}</p>` : ""}
     <div class="sigwrap">
-      ${done ? `<img src="${blobUrl(model.paraaf)}" alt="Paraaf LTH">` : `<canvas id="sig"></canvas>`}
+      ${val ? `<img src="${blobUrl(val)}" alt="${esc(title)}">` : `<canvas id="${id}"></canvas>`}
       <div class="sigbar">
-        <span>${done ? "Geparafeerd" : "Teken hierboven met vinger of muis"}</span>
-        <button type="button" id="sigClear">${done ? "Opnieuw" : "Wissen"}</button>
+        <span>${val ? esc(doneTxt) : "Teken hierboven met vinger of muis"}</span>
+        <button type="button" data-sigclear="${id}" data-sigfield="${field}">${val ? "Opnieuw" : "Wissen"}</button>
       </div>
     </div>
   </div>`;
+}
+function lthSigHtml(){
+  return sigHtml("sig", "paraaf", "Paraaf LTH",
+    "De LTH parafeert nadat hij de las visueel geïnspecteerd heeft en akkoord is met het eindresultaat.", "Geparafeerd");
+}
+function lasserSigHtml(){
+  return sigHtml("sig2", "handtekening", "Handtekening PE lasser (NTA 8828)",
+    "De PE lasser tekent voor het juist invullen van dit formulier. Deze handtekening komt op alle PDF's (Bijlage 4 en Bijlage 5).", "Getekend");
 }
 
 function renderForm(){
@@ -910,14 +921,17 @@ function renderForm(){
           : "Indien op één van bovenstaande vragen het antwoord NEE is, dan een verklaring geven."}</p>
         <textarea data-f="verklaring" placeholder="Toelichting…">${esc(model.verklaring)}</textarea>
         <div class="err-msg">Een verklaring is verplicht omdat er 'Nee' is geantwoord.</div>
-      </div>` + sigHtml()),
+      </div>` + lthSigHtml()),
     `<p class="hint" style="margin:16px 2px 0;font-style:italic">${esc(FOOTER_TXT)}</p>`,
     grpHtml("Bijlage 5 · Lasdocument", "eigen PDF — lasgegevens per las"),
     model.lassen5.map(lasHtml).join(""),
-    `<button type="button" class="btn ghost addlas" id="btnAddLas">+ Las toevoegen</button>`
+    `<button type="button" class="btn ghost addlas" id="btnAddLas">+ Las toevoegen</button>`,
+    grpHtml("Ondertekening", "komt op alle PDF's"),
+    sectionCard(null, "Handtekening PE lasser", lasserSigHtml())
   ].join("");
   $("#app").innerHTML = html;
-  if(!model.paraaf) setupSignature();
+  if(!model.paraaf) setupSignature("sig");
+  if(!model.handtekening) setupSignature("sig2");
 
   const archiefBtn = db
     ? `<button class="btn ghost" id="btnSave">${editingId ? "Wijzigingen opslaan" : "Ook in archief bewaren"}</button>`
@@ -981,17 +995,22 @@ function renderDetail(){
      ${sectionCard(null,"Controlepunten", checks)}
      ${sectionCard(null,"Uitvoeringsfoto's", `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:8px 0">${fotos}</div>`)}
      ${sectionCard(null,"Verklaring", `<div class="field" style="padding:9px 0;white-space:pre-wrap">${esc(r.verklaring)||'<span style="color:var(--text-faint)">Geen verklaring.</span>'}</div>
-       ${r.paraaf ? `<div class="field" style="padding:12px 0"><div style="font-size:12.5px;color:var(--text-dim);margin-bottom:6px">Paraaf LTH — ${esc(r.lth||"")}</div><img src="${blobUrl(r.paraaf)}" style="max-height:110px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px"></div>` : ""}`)}
+       ${r.paraaf ? `<div class="field" style="padding:12px 0"><div style="font-size:12.5px;color:var(--text-dim);margin-bottom:6px">Paraaf LTH — ${esc(r.lth||"")}</div><img src="${blobUrl(r.paraaf)}" alt="Paraaf LTH" style="max-height:110px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px"></div>` : ""}`)}
      ${grpHtml("Bijlage 5 · Lasdocument")}
-     ${sectionCard(null,"Lasgegevens per las", l5)}`;
+     ${sectionCard(null,"Lasgegevens per las", l5)}
+     ${grpHtml("Ondertekening")}
+     ${sectionCard(null,"Handtekening PE lasser (NTA 8828)", r.handtekening
+        ? `<div class="field" style="padding:12px 0"><div style="font-size:12.5px;color:var(--text-dim);margin-bottom:6px">${esc(r.lasser||"")}</div><img src="${blobUrl(r.handtekening)}" alt="Handtekening PE lasser" style="max-height:110px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px"></div>`
+        : `<p class="hint" style="margin-top:10px">Niet getekend.</p>`)}`;
   $("#actionbar").style.display = "none";
 }
 
 /* ============================================================
    Handtekening
    ============================================================ */
-function setupSignature(){
-  const cv = $("#sig"); if(!cv) return;
+function setupSignature(id){
+  const cv = $("#" + id); if(!cv) return;
+  const st = sigSt[id];
   const ratio = window.devicePixelRatio || 1;
   const fit = () => {
     const r = cv.getBoundingClientRect();
@@ -1005,28 +1024,28 @@ function setupSignature(){
   };
   fit();
   const ctx = cv.getContext("2d");
-  if(sigData){   // paraaf terugzetten na het opnieuw opbouwen van het formulier
+  if(st.data){   // tekening terugzetten na het opnieuw opbouwen van het formulier
     const im = new Image();
     im.onload = () => { const r = cv.getBoundingClientRect(); ctx.drawImage(im, 0, 0, r.width, r.height); };
-    im.src = sigData;
+    im.src = st.data;
   }
   let drawing = false;
   const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   cv.addEventListener("pointerdown", e => {
-    drawing = true; sigDirty = true; cv.setPointerCapture(e.pointerId);
+    drawing = true; st.dirty = true; cv.setPointerCapture(e.pointerId);
     const [x,y] = pos(e); ctx.beginPath(); ctx.moveTo(x,y);
   });
   cv.addEventListener("pointermove", e => { if(!drawing) return; const [x,y] = pos(e); ctx.lineTo(x,y); ctx.stroke(); });
-  cv.addEventListener("pointerup", () => { drawing = false; try{ sigData = cv.toDataURL("image/png"); }catch(e){} });
+  cv.addEventListener("pointerup", () => { drawing = false; try{ st.data = cv.toDataURL("image/png"); }catch(e){} });
   cv.addEventListener("pointercancel", () => { drawing = false; });
 }
 
-function sigIsEmpty(){ return !sigDirty; }
+function sigIsEmpty(id){ return !sigSt[id].dirty; }
 
-/* Paraaf als PNG: zwarte lijnen op wit (ook als het scherm in donkere modus staat) */
-function sigCanvasPng(){
-  const cv = $("#sig");
-  if(!cv || sigIsEmpty()) return null;
+/* Tekening als PNG: zwarte lijnen op wit (ook als het scherm in donkere modus staat) */
+function sigCanvasPng(id){
+  const cv = $("#" + id);
+  if(!cv || sigIsEmpty(id)) return null;
   const ink = document.createElement("canvas");
   ink.width = cv.width; ink.height = cv.height;
   const ic = ink.getContext("2d");
@@ -1040,14 +1059,14 @@ function sigCanvasPng(){
   c.drawImage(ink, 0, 0);
   return out;
 }
-function sigPngDataUrl(){ const out = sigCanvasPng(); try{ return out ? out.toDataURL("image/png") : null; }catch(e){ return null; } }
+function sigPngDataUrl(id){ const out = sigCanvasPng(id); try{ return out ? out.toDataURL("image/png") : null; }catch(e){ return null; } }
 
-async function uploadSignature(){
-  const out = sigCanvasPng();
+async function uploadSignature(id, filename){
+  const out = sigCanvasPng(id);
   if(!out || !assets) return null;
   const blob = await new Promise(res => out.toBlob(res, "image/png"));
   if(!blob) return null;
-  try{ const r = await assets.upload(blob, {filename:"paraaf-lth.png"}); return r.id; }
+  try{ const r = await assets.upload(blob, {filename}); return r.id; }
   catch(e){ return null; }
 }
 
@@ -1135,10 +1154,11 @@ async function save(){
   if(!db){ flash("Opslaan is hier niet beschikbaar — gebruik Print om het formulier vast te leggen.", "err", 6000); return; }
   const btn = $("#btnSave"); if(btn){ btn.disabled = true; btn.textContent = "Opslaan…"; }
   try{
-    if(!model.paraaf){ const sid = await uploadSignature(); if(sid) model.paraaf = sid; }
+    if(!model.paraaf){ const sid = await uploadSignature("sig", "paraaf-lth.png"); if(sid) model.paraaf = sid; }
+    if(!model.handtekening){ const hid = await uploadSignature("sig2", "handtekening-lasser.png"); if(hid) model.handtekening = hid; }
     const fotos = {};
     PHOTOS.forEach(p => { if(model.fotos[p.key]) fotos[p.key] = model.fotos[p.key]; });
-    const body = {fotos, paraaf: model.paraaf || null, status:"afgerond", updatedAt: Date.now()};
+    const body = {fotos, paraaf: model.paraaf || null, handtekening: model.handtekening || null, status:"afgerond", updatedAt: Date.now()};
     TEXTFIELDS.forEach(f => body[f.id] = String(model[f.id]||""));
     CHECKS.forEach(c => body[c.id] = model[c.id] || "");
     body.verklaring = String(model.verklaring||"");
@@ -1148,7 +1168,7 @@ async function save(){
     if(editingId){
       await db.doc(editingPath).update(body);
       const openId = editingId, openPath = editingPath;
-      editingId = null; editingPath = null; model = blankModel(); sigDirty = false; sigData = null;
+      editingId = null; editingPath = null; model = blankModel(); resetSigs();
       detail = Object.assign({__id: openId, __path: openPath}, body, {createdAt: (records.find(r=>r.__path===openPath)||{}).createdAt});
       view = "detail"; render();
       flash("Wijzigingen opgeslagen.", "ok");
@@ -1157,7 +1177,7 @@ async function save(){
       const ref = await formsCol(myUid).add(body);
       try{ await db.doc("lassen/" + myUid).set({updatedAt: Date.now()}); }catch(e){} // index zodat de eigenaar deze map vindt
       clearDraft();
-      editingId = null; model = blankModel(); sigDirty = false; sigData = null;
+      editingId = null; model = blankModel(); resetSigs();
       detail = Object.assign({__id: ref.id, __path: "lassen/"+myUid+"/forms/"+ref.id}, body);
       view = "detail"; render();
       flash("Formulier opgeslagen in het archief. Klik hieronder op Verzenden formulier om het te versturen.", "ok", 6000);
@@ -1327,6 +1347,21 @@ async function newPdf(title, r){
       k.y = top + bh + capH;
     }
   };
+  // handtekening (of lege lijn) met onderschrift op positie x, vanaf k.y; geeft hoogte terug
+  k.sigAt = async function(x, id, label){
+    let h = 18;
+    if(id){
+      try{
+        const im = await imgInfo(id);
+        const w = 48; h = Math.min(20, im.h * (w / im.w));
+        doc.addImage(im.data, "PNG", x, k.y + (20 - h), w, h); h = 20;
+      }catch(e){ h = 20; }
+    }else{ h = 20; }
+    doc.setDrawColor(30); doc.line(x, k.y + h + 1, x + 70, k.y + h + 1); doc.setDrawColor(140);
+    setN(8.5, false);
+    doc.text(doc.splitTextToSize(label, 80), x, k.y + h + 5.5);
+    return h + 12;
+  };
   k.finish = function(){
     const n = doc.getNumberOfPages();
     for(let i = 1; i <= n; i++){
@@ -1363,18 +1398,11 @@ async function makePdf(r){
   const vh = Math.max(20, vl.length * 4 + 5);
   k.need(vh); doc.rect(M, k.y, CW, vh, "S"); doc.text(vl, M + 2, k.y + 5); k.y += vh + 8;
 
-  // paraaf
-  k.need(34);
-  if(r.paraaf){
-    try{
-      const im = await imgInfo(r.paraaf);
-      const w = 48, h = Math.min(20, im.h * (w / im.w));
-      doc.addImage(im.data, "PNG", M, k.y, w, h); k.y += h;
-    }catch(e){ k.y += 18; }
-  }else{ k.y += 18; }
-  doc.setDrawColor(30); doc.line(M, k.y + 1, M + 60, k.y + 1); doc.setDrawColor(140);
-  k.setN(8.5, false);
-  doc.text(`Paraaf LTH — ${r.lth || ""}`, M, k.y + 5.5); k.y += 12;
+  // handtekening PE lasser (links) en paraaf LTH (rechts)
+  k.need(38);
+  const h1 = await k.sigAt(M, r.handtekening, `Handtekening PE lasser (NTA 8828) — ${r.lasser || ""}`);
+  const h2 = await k.sigAt(M + CW / 2 + 4, r.paraaf, `Paraaf LTH — ${r.lth || ""}`);
+  k.y += Math.max(h1, h2);
 
   k.need(16); k.setN(7.5, false); doc.setTextColor(90);
   doc.text(doc.splitTextToSize(FOOTER_TXT, CW), M, k.y + 3);
@@ -1404,6 +1432,9 @@ async function makePdf5(r){
     if(fotos.length) await k.photos(fotos.map((id, j) => ({id, label: `Las ${l.nr || i+1} — foto ${j+1}`})));
     k.y += 3;
   }
+  k.head("Ondertekening");
+  k.need(38); k.y += 4;
+  k.y += await k.sigAt(k.M, r.handtekening, `Handtekening PE lasser (NTA 8828) — ${r.lasser || ""}`);
   return k.finish();
 }
 
@@ -1623,7 +1654,10 @@ function sharePending(){
 async function pdfAndMail(r, alsoMail){
   if(!r){ flash("Er is niets om te verwerken.", "err"); return; }
   // vanuit het formulier: paraaf direct van het tekenvlak meenemen
-  if(r === model) r = Object.assign({}, model, {paraaf: model.paraaf || sigPngDataUrl()});
+  if(r === model) r = Object.assign({}, model, {
+    paraaf: model.paraaf || sigPngDataUrl("sig"),
+    handtekening: model.handtekening || sigPngDataUrl("sig2")
+  });
   flash("PDF's worden opgebouwd…", "warn", 30000);
   let docs;
   try{
@@ -1736,6 +1770,14 @@ document.addEventListener("click", async e => {
   if(pick){ pendingPhotoKey = pick; $("#filepick").multiple = false; $("#filepick").click(); return; }
   const rm = t.getAttribute("data-rmphoto");
   if(rm){ delete model.fotos[rm]; saveDraft(); renderForm(); return; }
+  const sc = t.getAttribute("data-sigclear");
+  if(sc){
+    const field = t.getAttribute("data-sigfield");
+    if(field) model[field] = null;
+    if(sigSt[sc]){ sigSt[sc].dirty = false; sigSt[sc].data = null; }
+    saveDraft(); renderForm();
+    return;
+  }
   const cp = t.getAttribute("data-copy");
   if(cp){ copyField(cp, t); return; }
   // Bijlage 5: per las
@@ -1794,7 +1836,7 @@ document.addEventListener("click", async e => {
   switch(t.id){
     case "tabForm": view = "form"; render(); break;
     case "tabList": view = "list"; render(); break;
-    case "btnNew":  editingId = null; model = blankModel(); sigDirty = false; sigData = null; view = "form"; render(); break;
+    case "btnNew":  editingId = null; model = blankModel(); resetSigs(); view = "form"; render(); break;
     case "btnSave": await save(); break;
     case "btnMailDirect": if(validate()) await pdfAndMail(model, true); else flash("Vul eerst de verplichte velden in.", "err"); break;
     case "btnPdfOnly": if(validate()) await pdfAndMail(model, false); else flash("Vul eerst de verplichte velden in.", "err"); break;
@@ -1824,7 +1866,7 @@ document.addEventListener("click", async e => {
       model = Object.assign(blankModel(), detail, {fotos: Object.assign({}, detail.fotos||{})});
       model.lassen5 = cleanLassen(detail.lassen5);
       if(!model.lassen5.length) model.lassen5 = [blankLas()];
-      sigDirty = false; sigData = null; view = "form"; render();
+      resetSigs(); view = "form"; render();
       break;
     }
     case "btnDel": {
@@ -1834,16 +1876,12 @@ document.addEventListener("click", async e => {
       break;
     }
     case "btnReset": {
-      if(editingId){ editingId = null; editingPath = null; model = blankModel(); sigDirty = false; sigData = null; view = "list"; render(); return; }
+      if(editingId){ editingId = null; editingPath = null; model = blankModel(); resetSigs(); view = "list"; render(); return; }
       if(!confirm("Formulier leegmaken?")) return;
-      model = blankModel(); sigDirty = false; sigData = null; clearDraft(); render();
+      model = blankModel(); resetSigs(); clearDraft(); render();
       break;
     }
-    case "sigClear": {
-      if(model.paraaf){ model.paraaf = null; }
-      sigDirty = false; sigData = null; saveDraft(); renderForm();
-      break;
-    }
+    case "sigClear": break;
   }
 });
 
