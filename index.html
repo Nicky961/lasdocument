@@ -283,6 +283,9 @@ input[type="file"]{display:none}
 .mailbox .mhint{font-size:13px;color:var(--warn);background:var(--warn-soft);border-radius:6px;padding:8px 10px;margin:0 0 10px}
 .mailbox .web{display:flex;gap:8px;margin:0 0 10px}
 .mailbox .web a{flex:1;text-align:center;text-decoration:none;font-size:14px;padding:10px 8px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.mailbox .web a[hidden]{display:none}
+.mailbox .web{flex-wrap:wrap}
+.mailbox .web a#mOutlookApp{flex-basis:100%}
 .mailbox .mf{margin-top:8px}
 .mailbox .mf .lbl{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-dim);margin-bottom:3px}
 .mailbox .mf input,.mailbox .mf textarea{font-size:13.5px;padding:8px 10px;background:var(--surface-2)}
@@ -362,6 +365,7 @@ input[type="file"]{display:none}
       <p class="mhint" id="mailHint" hidden>Ging er geen mail open? Gebruik Outlook of Gmail op het web, of kopieer hieronder adres, onderwerp en tekst naar je eigen mailprogramma.</p>
       <p class="mtxt" style="margin:0 0 8px;font-size:13px">Opent er geen mail? Mail dan via het web of kopieer de gegevens:</p>
       <div class="web">
+        <a class="btn primary" id="mOutlookApp" href="#" hidden>Openen in Outlook-app</a>
         <a class="btn" id="mOutlook" href="#" target="_blank" rel="noopener">Outlook (web)</a>
         <a class="btn" id="mGmail" href="#" target="_blank" rel="noopener">Gmail</a>
       </div>
@@ -381,12 +385,13 @@ input[type="file"]{display:none}
    ============================================================ */
 const LASSERS = ["Martin de Haan","Ronnie Terweij"];
 const BUISLEV = ["Wavin","George Fisher (GF)"];
-const REGIOS  = ["Noord-Holland","Zuid-Holland"];
+const REGIOS  = ["Noord-Holland","Zuid-Holland","Amsterdam"];
 const HULPSTUKLEV = ["George Fisher (GF)","Frialen"];
-const LTHS    = ["Peter van Wichen","Roy van Vliet"];
+const LTHS    = ["Peter van Wichen","Roy van Vliet","René Lukassen"];
 const LTH_MAIL = {
   "Peter van Wichen": "peter.van.wichen@alliander.com",
-  "Roy van Vliet":    "Roy.van.vliet@alliander.com"
+  "Roy van Vliet":    "Roy.van.vliet@alliander.com",
+  "René Lukassen":    "Rene.Lukassen@alliander.com"
 };
 
 const PHOTOS = [
@@ -421,6 +426,7 @@ const TEXTFIELDS = [
   {id:"lth",        n:8,  label:"Naam LTH",           type:"select", req:true, proj:true, opts:LTHS, other:true},
   {id:"lthmail",    n:9,  label:"Mailadres LTH",      type:"email",  req:false, proj:true},
   {id:"lthAanwezig", n:null, label:"LTH aanwezig?",      type:"jn",     req:true,  proj:true},
+  {id:"proeflas",    n:null, label:"Proeflas gemaakt?",  type:"jn",     req:true,  proj:true},
   {id:"hulpstuk",   n:10, label:"Hulpstuk Leverancier",type:"select", req:true, opts:HULPSTUKLEV},
   {id:"lasnummer",  n:11, label:"Lasnummer",          type:"text",   req:false, hint:"De las waar dit borgingsdocument over gaat."}
 ];
@@ -435,16 +441,20 @@ const B5_PROJ = [
   {id:"plaats",    label:"Project plaats"},
   {id:"lasser",    label:"Naam PE lasser"},
   {id:"lth",       label:"Naam LTH"},
-  {id:"lthAanwezig", label:"LTH aanwezig?", nonum:true}
+  {id:"lthAanwezig", label:"LTH aanwezig?", nonum:true},
+  {id:"proeflas",    label:"Proeflas gemaakt?", nonum:true}
 ];
 const SOORTEN = ["Stuiklas","Elektrolas"];
 const DOOR    = ["PE lasser","LTH"];
-function blankLas(){ return {nr:"", soort:[], visueel:"", door:"", fotos:[], opm:""}; }
-function lasFilled(l){ return !!(l && (String(l.nr||"").trim() || (l.soort||[]).length || l.visueel || l.door || (l.fotos||[]).length || String(l.opm||"").trim())); }
+function blankLas(){ return {nr:"", soort:[], visueel:"", door:[], fotos:[], opm:""}; }
+/* "Gecontroleerd door" mag PE lasser én LTH zijn; oude formulieren hebben één tekst */
+function doorArr(l){ const d = l && l.door; return Array.isArray(d) ? d.slice() : (d ? [d] : []); }
+function doorTxt(l, sep){ return doorArr(l).join(sep || ", "); }
+function lasFilled(l){ return !!(l && (String(l.nr||"").trim() || (l.soort||[]).length || l.visueel || doorArr(l).length || (l.fotos||[]).length || String(l.opm||"").trim())); }
 /* Lasnummer(s) voor Bijlage 4: afgelezen uit de lassen van Bijlage 5 */
 function lasNrs(r){ return (r.lassen5||[]).map(l => String(l.nr||"").trim()).filter(Boolean).join(", "); }
 function cleanLassen(arr){
-  return (arr||[]).map(l => ({nr:String(l.nr||""), soort:(l.soort||[]).slice(), visueel:l.visueel||"", door:l.door||"", fotos:(l.fotos||[]).slice(), opm:String(l.opm||"")}));
+  return (arr||[]).map(l => ({nr:String(l.nr||""), soort:(l.soort||[]).slice(), visueel:l.visueel||"", door:doorArr(l), fotos:(l.fotos||[]).slice(), opm:String(l.opm||"")}));
 }
 
 const FOOTER_TXT = "De betreffende PE lasser is verantwoordelijk voor het correct vullen van dit borgingsdocument. " +
@@ -476,6 +486,7 @@ function blankModel(){
   CHECKS.forEach(c => m[c.id] = "");
   m.verklaring = "";
   m.lassen5 = [blankLas()];
+  m.proeflas = "nee";   // standaard: geen proeflas
   m.datum = new Date().toISOString().slice(0,10);
   return m;
 }
@@ -877,7 +888,8 @@ function lasHtml(l, i){
       </div>
       <div class="field">
         <div class="q">${nr(base+3)}Gecontroleerd door</div>
-        <div class="opts">${DOOR.map(x => `<button type="button" data-l5door="${i}" data-val="${esc(x)}" data-on="${l.door===x?1:0}">${esc(x)}</button>`).join("")}</div>
+        <p class="hint">Meerdere keuzes mogelijk.</p>
+        <div class="opts">${DOOR.map(x => `<button type="button" data-l5door="${i}" data-val="${esc(x)}" data-on="${doorArr(l).indexOf(x) >= 0 ? 1 : 0}">${esc(x)}</button>`).join("")}</div>
       </div>
       <div class="field">
         <div class="q">${nr(base+4)}Foto's</div>
@@ -990,7 +1002,7 @@ function renderDetail(){
   const b4gegevens = TEXTFIELDS.filter(f => !f.proj).map(f => row(f.label, esc(r[f.id]||""))).join("");
   const l5 = (r.lassen5||[]).filter(lasFilled).map((l, i) => `<div class="field" style="padding:12px 0">
       <div style="font-weight:650">Las ${i+1}${l.nr ? " &middot; nr. " + esc(l.nr) : ""}</div>
-      <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Soort: ${esc((l.soort||[]).join(", ") || "—")} &middot; Visueel voldoet: ${jn(l.visueel)} &middot; Gecontroleerd door: ${esc(l.door || "—")}</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Soort: ${esc((l.soort||[]).join(", ") || "—")} &middot; Visueel voldoet: ${jn(l.visueel)} &middot; Gecontroleerd door: ${esc(doorTxt(l) || "—")}</div>
       ${l.opm ? `<div style="white-space:pre-wrap;margin-top:6px;font-size:14px">${esc(l.opm)}</div>` : ""}
       ${(l.fotos||[]).length ? `<div class="thumbs" style="margin-top:9px">${l.fotos.map(id => `<div class="thumb"><img src="${blobUrl(id)}" alt=""></div>`).join("")}</div>` : ""}
     </div>`).join("") || `<p class="hint" style="margin-top:10px">Geen lassen ingevuld.</p>`;
@@ -1216,7 +1228,7 @@ async function exportCsv(){
   const cols = TEXTFIELDS.map(f => f.id).concat(CHECKS.map(c => c.id), ["verklaring","status","_l5"]);
   const head = TEXTFIELDS.map(f => f.label).concat(CHECKS.map(c => c.n + ". " + c.q), ["Verklaring","Status","Bijlage 5 lassen"]);
   const l5txt = r => (r.lassen5||[]).filter(lasFilled).map(l =>
-    `Las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"-"}, visueel ${l.visueel||"-"}, door ${l.door||"-"}, ${(l.fotos||[]).length} foto('s)${l.opm ? ", " + l.opm : ""}`).join(" | ");
+    `Las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"-"}, visueel ${l.visueel||"-"}, door ${doorTxt(l, "/")||"-"}, ${(l.fotos||[]).length} foto('s)${l.opm ? ", " + l.opm : ""}`).join(" | ");
   const q = v => '"' + String(v==null?"":v).replace(/"/g,'""') + '"';
   const csv = "\uFEFF" + [head.map(q).join(";")].concat(
     records.map(r => cols.map(c => q(c === "_l5" ? l5txt(r) : r[c])).join(";"))
@@ -1286,14 +1298,14 @@ async function imgInfo(id){
 function pdfName5(r){
   const p = String(r.projectnr || "zonder-nr").replace(/[^\w-]+/g,"-");
   const d = (r.datum || new Date().toISOString().slice(0,10));
-  return `PE-lasdocument_${p}_${d}.pdf`;
+  return `Bijlage-5_PE-lasdocument_${p}_${d}.pdf`;
 }
 
 function pdfName(r){
   const p = String(r.projectnr || "zonder-nr").replace(/[^\w-]+/g,"-");
   const d = (r.datum || new Date().toISOString().slice(0,10));
   const l = r.lasnummer ? "_las" + String(r.lasnummer).replace(/[^\w-]+/g,"-") : "";
-  return `PE-lasborging_${p}_${d}${l}.pdf`;
+  return `Bijlage-4_PE-lasborging_${p}_${d}${l}.pdf`;
 }
 
 /* Gedeelde PDF-opmaak voor Bijlage 4 en Bijlage 5 */
@@ -1444,7 +1456,7 @@ async function makePdf5(r){
   const k = await newPdf('NTA 8828 Bijlage 5 — PE Lasdocument', r);
   k.head("Algemene gegevens");
   B5_PROJ.forEach((f, i) => k.row(`${f.nonum ? "" : (i+1) + ". "}${f.label}`,
-    f.id === "datum" ? nlDate(r.datum) : f.id === "lthAanwezig" ? jnTxt(r[f.id]) : r[f.id]));
+    f.id === "datum" ? nlDate(r.datum) : f.nonum ? jnTxt(r[f.id]) : r[f.id]));
 
   const lassen = (r.lassen5 || []).filter(lasFilled);
   if(!lassen.length){ k.head("Lasgegevens per las van het project"); k.row("—", "Geen lassen ingevuld."); }
@@ -1455,7 +1467,7 @@ async function makePdf5(r){
     k.row(`${base}. Lasnummer`, l.nr);
     k.row(`${base+1}. Soort las`, (l.soort || []).join(", "));
     k.row(`${base+2}. Visuele beoordeling voldoet`, l.visueel === "ja" ? "JA" : l.visueel === "nee" ? "NEE" : "—");
-    k.row(`${base+3}. Gecontroleerd door`, l.door);
+    k.row(`${base+3}. Gecontroleerd door`, doorTxt(l));
     k.row(`${base+4}. Foto's`, fotos.length ? `${fotos.length} foto${fotos.length > 1 ? "'s" : ""} — zie hieronder` : "");
     k.row(`${base+5}. Opmerkingen`, l.opm);
     if(fotos.length) await k.photos(fotos.map((id, j) => ({id, label: `Las ${l.nr || i+1} — foto ${j+1}`})));
@@ -1484,6 +1496,7 @@ function mailParts(r, asImages){
     `PE lasser     : ${r.lasser||"—"}`,
     `LTH           : ${r.lth||"—"}`,
     `LTH aanwezig  : ${jnTxt(r.lthAanwezig)}`,
+    `Proeflas      : ${jnTxt(r.proeflas)}`,
     `Lasnummer     : ${r.lasnummer||"—"}`,
     `Buisleverancier: ${r.buislev||"—"}`,
     `Hulpstukleverancier: ${r.hulpstuk||"—"}`,
@@ -1491,7 +1504,7 @@ function mailParts(r, asImages){
     anyNee(r) ? `Let op: één of meer controlepunten zijn met NEE beantwoord. Verklaring:\n${r.verklaring||""}` : "Alle controlepunten zijn akkoord.",
     "",
     `Bijlage 5 — ${lassen.length} las(sen):`,
-    ...lassen.map(l => `- las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"soort ?"}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${l.door||"—"}`),
+    ...lassen.map(l => `- las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"soort ?"}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${doorTxt(l)||"—"}`),
     anyL5Nee(r) ? "Let op: bij één of meer lassen voldoet de visuele beoordeling NIET." : "",
     "",
     "Met vriendelijke groet,"
@@ -1506,7 +1519,7 @@ function shortBody(r, asImages){
     `- NTA 8828 Bijlage 4 (lasborging), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
     "- NTA 8828 Bijlage 5 (lasdocument)", "",
     `Project ${r.projectnr||"—"}, ${nlDate(r.datum)}, ${[r.adres, r.plaats].filter(Boolean).join(", ")||"—"}`,
-    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"} (aanwezig: ${jnTxt(r.lthAanwezig)})`,
+    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"} (aanwezig: ${jnTxt(r.lthAanwezig)})  |  Proeflas: ${jnTxt(r.proeflas)}`,
     (anyNee(r) || anyL5Nee(r)) ? "Let op: er is minimaal één punt met NEE beantwoord, zie de bijlagen." : "",
     "", "Met vriendelijke groet,"
   ].join("\n");
@@ -1524,7 +1537,16 @@ function fillMailBox(r, asImages){
   $("#mBody").value = body;
   $("#mOutlook").setAttribute("href", `https://outlook.office.com/mail/deeplink/compose?to=${e(MAIL_TO)}${cc ? "&cc=" + e(cc) : ""}&subject=${e(sub)}&body=${e(body)}`);
   $("#mGmail").setAttribute("href", `https://mail.google.com/mail/?view=cm&fs=1&to=${e(MAIL_TO)}${cc ? "&cc=" + e(cc) : ""}&su=${e(sub)}&body=${e(body)}`);
+  // Outlook-app (iPad/iPhone/Android): opent direct een nieuwe mail in de app
+  const app = $("#mOutlookApp");
+  app.setAttribute("href", `ms-outlook://compose?to=${e(MAIL_TO)}${cc ? "&cc=" + e(cc) : ""}&subject=${e(sub)}&body=${e(body)}`);
+  app.hidden = !isMobileDevice();
+  if(inFrame()){ app.setAttribute("target", "_blank"); app.setAttribute("rel", "noopener"); } else app.removeAttribute("target");
   $("#mailHint").hidden = true;
+}
+function isMobileDevice(){
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
 }
 function copyField(id, btn){
   const el = $("#" + id); if(!el) return;
@@ -1820,7 +1842,12 @@ document.addEventListener("click", async e => {
   const l5door = t.getAttribute("data-l5door");
   if(l5door != null){
     const las = model.lassen5[+l5door], v = t.getAttribute("data-val");
-    if(las){ las.door = las.door === v ? "" : v; saveDraft(); renderForm(); }
+    if(las){
+      const d = doorArr(las), k = d.indexOf(v);
+      if(k >= 0) d.splice(k, 1); else d.push(v);
+      las.door = d.sort((a, b) => DOOR.indexOf(a) - DOOR.indexOf(b));
+      saveDraft(); renderForm();
+    }
     return;
   }
   const l5soort = t.getAttribute("data-l5soort");
@@ -1875,6 +1902,7 @@ document.addEventListener("click", async e => {
     case "mClose": $("#mailModal").hidden = true; resetMailModal(); break;
     case "iOpen": afterMailClick(); break;
     case "mOpen": afterMailClick(); break;
+    case "mOutlookApp": afterMailClick(); break;
     case "mShare": sharePending(); break;
     case "mSaveToo": { const n = await savePending(); flash(n ? `${n} PDF('s) opgeslagen.` : "Opslaan mislukt.", n ? "ok" : "err"); break; }
     case "mUseMailto": await showMailtoMode(); break;
