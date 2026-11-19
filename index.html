@@ -85,7 +85,8 @@ header.top{
   border-bottom:1px solid var(--border);
 }
 .top-inner{max-width:760px;margin:0 auto;padding:14px 16px 0}
-.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand .logo{height:38px;width:auto;display:block;background:#fff;border-radius:6px;padding:3px 6px}
 .brand h1{font-size:17px;margin:0;font-weight:650;letter-spacing:-.01em}
 .brand .sub{font-size:12px;color:var(--text-faint);font-family:var(--mono)}
 .tabs{display:flex;gap:2px;margin-top:12px}
@@ -315,8 +316,11 @@ input[type="file"]{display:none}
 <header class="top">
   <div class="top-inner">
     <div class="brand">
-      <h1>PE Lasborgingsdocument</h1>
-      <span class="sub">Bijlage 4 &middot; Liander</span>
+      <img class="logo" id="logo" alt="Mook B.V. Civiel &amp; Infra">
+      <div>
+        <h1>PE Lasborgingsdocument</h1>
+        <span class="sub">NTA 8828 &middot; Bijlage 4 &amp; 5</span>
+      </div>
     </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tabForm" aria-selected="true">Nieuw formulier</button>
@@ -341,7 +345,7 @@ input[type="file"]{display:none}
     <h3>PDF's klaar</h3>
     <p class="mfile" id="mFile"></p>
     <div id="mShareBox" hidden>
-      <p class="mtxt">Tik op <strong>Verstuur e-mail</strong> en kies je mail-app (Mail, Outlook, Gmail). Alle PDF's (Bijlage 4 per las en Bijlage 5) zitten er dan al als losse bijlagen in. Het adres <code>beproevingen@mookbv.nl</code> staat op je klembord: plak het in het Aan-veld.</p>
+      <p class="mtxt">Tik op <strong>Verstuur e-mail</strong> en kies je mail-app (Mail, Outlook, Gmail). Alle PDF's (Bijlage 4 per las en Bijlage 5) zitten er dan al als losse bijlagen in. Het adres <code>NTA8828@mookbv.nl</code> staat op je klembord: plak het in het Aan-veld.</p>
       <button class="btn primary" id="mShare" style="width:100%">Verstuur e-mail</button>
       <div class="mrow"><button class="lnk" id="mSaveToo">PDF's ook op dit apparaat opslaan</button><button class="lnk" id="mUseMailto">Andere manier</button></div>
     </div>
@@ -416,11 +420,12 @@ const TEXTFIELDS = [
   {id:"plaats",     n:7,  label:"Plaats",             type:"text",   req:true, proj:true},
   {id:"lth",        n:8,  label:"Naam LTH",           type:"select", req:true, proj:true, opts:LTHS, other:true},
   {id:"lthmail",    n:9,  label:"Mailadres LTH",      type:"email",  req:false, proj:true},
+  {id:"lthAanwezig", n:null, label:"LTH aanwezig?",      type:"jn",     req:true,  proj:true},
   {id:"hulpstuk",   n:10, label:"Hulpstuk Leverancier",type:"select", req:true, opts:HULPSTUKLEV},
   {id:"lasnummer",  n:11, label:"Lasnummer",          type:"text",   req:false, hint:"De las waar dit borgingsdocument over gaat."}
 ];
 
-/* Bijlage 5 "Liander PE Lasdocument": algemene gegevens 1–7 (zelfde
+/* NTA 8828 Bijlage 5 "PE Lasdocument": algemene gegevens 1–7 (zelfde
    antwoorden als hierboven), daarna per las 6 vragen. */
 const B5_PROJ = [
   {id:"datum",     label:"Datum"},
@@ -429,7 +434,8 @@ const B5_PROJ = [
   {id:"adres",     label:"Project adres"},
   {id:"plaats",    label:"Project plaats"},
   {id:"lasser",    label:"Naam PE lasser"},
-  {id:"lth",       label:"Naam LTH"}
+  {id:"lth",       label:"Naam LTH"},
+  {id:"lthAanwezig", label:"LTH aanwezig?", nonum:true}
 ];
 const SOORTEN = ["Stuiklas","Elektrolas"];
 const DOOR    = ["PE lasser","LTH"];
@@ -759,10 +765,21 @@ function sectionCard(num, title, inner){
   return `<section class="card"><div class="card-head">${num ? `<span class="n">${num}</span>` : ""}<h2>${esc(title)}</h2></div><div class="card-body">${inner}</div></section>`;
 }
 
+const jnTxt = v => v === "ja" ? "JA" : v === "nee" ? "NEE" : "—";
 function textFieldHtml(f){
   const v = model[f.id] || "";
   const req = f.req ? '<span class="req">*</span>' : "";
   let input;
+  if(f.type === "jn"){
+    return `<div class="field" id="fld-${f.id}">
+      <div class="q">${esc(f.label)}${req}</div>
+      <div class="jn">
+        <button type="button" data-jn="${f.id}" data-val="ja"  data-on="${v==="ja"?1:0}"><span class="dot"></span>Ja</button>
+        <button type="button" data-jn="${f.id}" data-val="nee" data-on="${v==="nee"?1:0}"><span class="dot"></span>Nee</button>
+      </div>
+      <div class="err-msg">Kies ja of nee.</div>
+    </div>`;
+  }
   if(f.type === "select"){
     const isOther = v && f.opts.indexOf(v) === -1;
     const opts = ['<option value="">— kies —</option>']
@@ -905,7 +922,7 @@ function renderForm(){
     sectionCard(null,"Projectgegevens",
       `<p class="hint" style="margin:10px 0 0">Eén keer invullen — deze gegevens komen op alle PDF's (Bijlage 4 en Bijlage 5).</p>` +
       TEXTFIELDS.filter(f => f.proj).map(textFieldHtml).join("")),
-    grpHtml("Bijlage 4 · Lasborgingsdocument", "eigen PDF"),
+    grpHtml("NTA 8828 Bijlage 4 · Lasborgingsdocument", "eigen PDF per las"),
     sectionCard(null,"Las- en materiaalgegevens", TEXTFIELDS.filter(f => !f.proj && f.id !== "lasnummer").map(textFieldHtml).join("") +
       `<p class="hint" style="margin:10px 0 0">Bijlage 4 vul je één keer in. Per las uit Bijlage 5 (hieronder) wordt een eigen Bijlage 4-PDF gemaakt met dat lasnummer.</p>`),
     sectionCard("12–13","Voorbereiding", CHECKS.filter(c=>c.sec==="Voorbereiding").map(checkHtml).join("")),
@@ -923,11 +940,11 @@ function renderForm(){
         <div class="err-msg">Een verklaring is verplicht omdat er 'Nee' is geantwoord.</div>
       </div>` + lthSigHtml()),
     `<p class="hint" style="margin:16px 2px 0;font-style:italic">${esc(FOOTER_TXT)}</p>`,
-    grpHtml("Bijlage 5 · Lasdocument", "eigen PDF — lasgegevens per las"),
+    grpHtml("NTA 8828 Bijlage 5 · Lasdocument", "eigen PDF — lasgegevens per las"),
     model.lassen5.map(lasHtml).join(""),
-    `<button type="button" class="btn ghost addlas" id="btnAddLas">+ Las toevoegen</button>`,
     grpHtml("Ondertekening", "komt op alle PDF's"),
-    sectionCard(null, "Handtekening PE lasser", lasserSigHtml())
+    sectionCard(null, "Handtekening PE lasser", lasserSigHtml()),
+    `<button type="button" class="btn ghost addlas" id="btnAddLas">+ Las toevoegen</button>`
   ].join("");
   $("#app").innerHTML = html;
   if(!model.paraaf) setupSignature("sig");
@@ -969,7 +986,7 @@ function renderDetail(){
   const row = (k,v) => `<div class="field" style="padding:9px 0"><div style="font-size:12.5px;color:var(--text-dim)">${esc(k)}</div><div style="font-weight:600">${v || "—"}</div></div>`;
   const jn = v => v === "ja" ? '<span style="color:var(--accent)">Ja</span>' : v === "nee" ? '<span style="color:var(--danger)">Nee</span>' : "—";
 
-  const algemeen = TEXTFIELDS.filter(f => f.proj).map(f => row(f.label, esc(f.type==="date"? nlDate(r[f.id]) : (r[f.id]||"")))).join("");
+  const algemeen = TEXTFIELDS.filter(f => f.proj).map(f => row(f.label, f.type === "jn" ? jn(r[f.id]) : esc(f.type==="date"? nlDate(r[f.id]) : (r[f.id]||"")))).join("");
   const b4gegevens = TEXTFIELDS.filter(f => !f.proj).map(f => row(f.label, esc(r[f.id]||""))).join("");
   const l5 = (r.lassen5||[]).filter(lasFilled).map((l, i) => `<div class="field" style="padding:12px 0">
       <div style="font-weight:650">Las ${i+1}${l.nr ? " &middot; nr. " + esc(l.nr) : ""}</div>
@@ -990,13 +1007,13 @@ function renderDetail(){
       <button class="btn ghost" id="btnDel" style="color:var(--danger);border-color:var(--danger)">Verwijderen</button></div>
      <section class="card"><div class="card-head"><h2>${esc(r.projectnr||"—")}</h2><span class="pill ${st.cls}" style="margin-left:auto">${st.txt}</span></div>
      <div class="card-body">${algemeen}</div></section>
-     ${grpHtml("Bijlage 4 · Lasborgingsdocument")}
+     ${grpHtml("NTA 8828 Bijlage 4 · Lasborgingsdocument")}
      ${sectionCard(null,"Las- en materiaalgegevens", b4gegevens)}
      ${sectionCard(null,"Controlepunten", checks)}
      ${sectionCard(null,"Uitvoeringsfoto's", `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:8px 0">${fotos}</div>`)}
      ${sectionCard(null,"Verklaring", `<div class="field" style="padding:9px 0;white-space:pre-wrap">${esc(r.verklaring)||'<span style="color:var(--text-faint)">Geen verklaring.</span>'}</div>
        ${r.paraaf ? `<div class="field" style="padding:12px 0"><div style="font-size:12.5px;color:var(--text-dim);margin-bottom:6px">Paraaf LTH — ${esc(r.lth||"")}</div><img src="${blobUrl(r.paraaf)}" alt="Paraaf LTH" style="max-height:110px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px"></div>` : ""}`)}
-     ${grpHtml("Bijlage 5 · Lasdocument")}
+     ${grpHtml("NTA 8828 Bijlage 5 · Lasdocument")}
      ${sectionCard(null,"Lasgegevens per las", l5)}
      ${grpHtml("Ondertekening")}
      ${sectionCard(null,"Handtekening PE lasser (NTA 8828)", r.handtekening
@@ -1245,9 +1262,13 @@ function ensureJsPdf(){
 ensureJsPdf(); // alvast starten, niet wachten (bij falen kan een volgende klik het opnieuw proberen)
 
 /* ============================================================
-   PDF + mail naar beproevingen@mookbv.nl
+   PDF + mail naar NTA8828@mookbv.nl
    ============================================================ */
-const MAIL_TO = "beproevingen@mookbv.nl";
+const MAIL_TO = "NTA8828@mookbv.nl";
+/* Logo Mook B.V. (app-kop en PDF's) */
+const LOGO = "data:image/png;base64,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";
+const LOGO_RATIO = 210 / 480;   // hoogte / breedte
+try{ document.getElementById("logo").src = LOGO; }catch(e){}
 
 async function imgInfo(id){
   const res = await fetch(blobUrl(id));
@@ -1286,13 +1307,19 @@ async function newPdf(title, r){
   const setN = (sz, bold) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(sz); };
   k.need = need; k.setN = setN;
 
-  // kop
+  // kop met logo rechtsboven
+  const LW = 34, LH = LW * LOGO_RATIO, LY = M - 6;
+  try{ doc.addImage(LOGO, "PNG", PW - M - LW, LY, LW, LH); }catch(e){}
+  const TW = CW - LW - 6;
   setN(13, true);
-  doc.text(title, M, k.y); k.y += 6;
+  const tl = doc.splitTextToSize(title, TW);
+  doc.text(tl, M, k.y); k.y += 6 + (tl.length - 1) * 5.4;
   setN(8.5, false); doc.setTextColor(70);
   const meta = [`Projectnummer ${r.projectnr||"—"}`, nlDate(r.datum), `${r.adres||""} ${r.plaats||""}`.trim(), `Regio ${r.regio||"—"}`]
     .filter(Boolean).join("   |   ");
-  doc.text(meta, M, k.y); k.y += 3.5;
+  const ml = doc.splitTextToSize(meta, TW);
+  doc.text(ml, M, k.y); k.y += 3.5 + (ml.length - 1) * 3.6;
+  k.y = Math.max(k.y, LY + LH + 2);
   doc.setTextColor(0); doc.setDrawColor(30); doc.setLineWidth(0.4);
   doc.line(M, k.y, PW - M, k.y); k.y += 6;
   doc.setLineWidth(0.15); doc.setDrawColor(140);
@@ -1375,13 +1402,14 @@ async function newPdf(title, r){
   return k;
 }
 
-/* PDF 1: Bijlage 4 — Liander PE Lasborgingsdocument */
+/* PDF 1: NTA 8828 Bijlage 4 — PE Lasborgingsdocument */
 async function makePdf(r){
-  const k = await newPdf('Bijlage 4. "Liander PE Lasborgingsdocument"', r);
+  const k = await newPdf('NTA 8828 Bijlage 4 — PE Lasborgingsdocument', r);
   const doc = k.doc, M = k.M, CW = k.CW;
 
   k.head("Algemene gegevens");
-  TEXTFIELDS.forEach(f => k.row(`${f.n}. ${f.label}`, f.type === "date" ? nlDate(r[f.id]) : r[f.id]));
+  TEXTFIELDS.forEach(f => k.row(`${f.n ? f.n + ". " : ""}${f.label}`,
+    f.type === "date" ? nlDate(r[f.id]) : f.type === "jn" ? jnTxt(r[f.id]) : r[f.id]));
 
   k.head("Controlepunten");
   CHECKS.forEach(c => k.row(`${c.n}. ${c.q}`, r[c.id] === "ja" ? "JA" : r[c.id] === "nee" ? "NEE" : "—", c.hint || ""));
@@ -1411,11 +1439,12 @@ async function makePdf(r){
   return k.finish();
 }
 
-/* PDF 2: Bijlage 5 — Liander PE Lasdocument */
+/* PDF 2: NTA 8828 Bijlage 5 — PE Lasdocument */
 async function makePdf5(r){
-  const k = await newPdf('Bijlage 5. "Liander PE Lasdocument"', r);
+  const k = await newPdf('NTA 8828 Bijlage 5 — PE Lasdocument', r);
   k.head("Algemene gegevens");
-  B5_PROJ.forEach((f, i) => k.row(`${i+1}. ${f.label}`, f.id === "datum" ? nlDate(r.datum) : r[f.id]));
+  B5_PROJ.forEach((f, i) => k.row(`${f.nonum ? "" : (i+1) + ". "}${f.label}`,
+    f.id === "datum" ? nlDate(r.datum) : f.id === "lthAanwezig" ? jnTxt(r[f.id]) : r[f.id]));
 
   const lassen = (r.lassen5 || []).filter(lasFilled);
   if(!lassen.length){ k.head("Lasgegevens per las van het project"); k.row("—", "Geen lassen ingevuld."); }
@@ -1442,11 +1471,11 @@ function mailParts(r, asImages){
   const sub = `PE Lasborging + Lasdocument — project ${r.projectnr||"?"} — ${nlDate(r.datum)}`;
   const lassen = (r.lassen5||[]).filter(lasFilled);
   const body = [
-    "Beste beproevingen,",
+    "Beste,",
     "",
     asImages ? "Bijgaand als afbeeldingen (PNG), één per document:" : "Bijgaand als losse PDF's:",
-    `- het PE lasborgingsdocument (Bijlage 4), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
-    "- het PE lasdocument (Bijlage 5)",
+    `- het PE lasborgingsdocument (NTA 8828 Bijlage 4), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
+    "- het PE lasdocument (NTA 8828 Bijlage 5)",
     "",
     `Projectnummer : ${r.projectnr||"—"}`,
     `Datum         : ${nlDate(r.datum)}`,
@@ -1454,6 +1483,7 @@ function mailParts(r, asImages){
     `Regio         : ${r.regio||"—"}`,
     `PE lasser     : ${r.lasser||"—"}`,
     `LTH           : ${r.lth||"—"}`,
+    `LTH aanwezig  : ${jnTxt(r.lthAanwezig)}`,
     `Lasnummer     : ${r.lasnummer||"—"}`,
     `Buisleverancier: ${r.buislev||"—"}`,
     `Hulpstukleverancier: ${r.hulpstuk||"—"}`,
@@ -1471,12 +1501,12 @@ function mailParts(r, asImages){
 // korte tekst voor in de mail-link: lange links worden door sommige mailprogramma's genegeerd
 function shortBody(r, asImages){
   return [
-    "Beste beproevingen,", "",
+    "Beste,", "",
     asImages ? "Bijgaand de PE lasdocumenten als afbeeldingen (PNG):" : "Bijgaand de PE lasdocumenten als losse PDF's:",
-    `- Bijlage 4 (lasborging), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
-    "- Bijlage 5 (lasdocument)", "",
+    `- NTA 8828 Bijlage 4 (lasborging), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
+    "- NTA 8828 Bijlage 5 (lasdocument)", "",
     `Project ${r.projectnr||"—"}, ${nlDate(r.datum)}, ${[r.adres, r.plaats].filter(Boolean).join(", ")||"—"}`,
-    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"}`,
+    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"} (aanwezig: ${jnTxt(r.lthAanwezig)})`,
     (anyNee(r) || anyL5Nee(r)) ? "Let op: er is minimaal één punt met NEE beantwoord, zie de bijlagen." : "",
     "", "Met vriendelijke groet,"
   ].join("\n");
