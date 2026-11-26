@@ -397,9 +397,9 @@ function lasserNr(lasser, soorten){
   if(list.length === 1) return map[list[0]];
   return list.map(x => `${map[x]} (${x.toLowerCase()})`).join(", ");
 }
-const BUISLEV = ["Wavin","George Fisher (GF)"];
+const BUISLEV = ["Wavin","George Fisher (GF)","Egaplast"];
 const REGIOS  = ["Noord-Holland","Zuid-Holland","Amsterdam"];
-const HULPSTUKLEV = ["George Fisher (GF)","Frialen"];
+const HULPSTUKLEV = ["George Fisher (GF)","Frialen","Friatec"];
 const LTHS    = ["Peter van Wichen","Roy van Vliet","René Lukassen"];
 const LTH_MAIL = {
   "Peter van Wichen": "peter.van.wichen@alliander.com",
@@ -439,7 +439,6 @@ const TEXTFIELDS = [
   {id:"lth",        n:8,  label:"Naam LTH",           type:"select", req:true, proj:true, opts:LTHS, other:true},
   {id:"lthmail",    n:9,  label:"Mailadres LTH",      type:"email",  req:false, proj:true},
   {id:"lthAanwezig", n:null, label:"LTH aanwezig?",      type:"jn",     req:true,  proj:true},
-  {id:"proeflas",    n:null, label:"Proeflas gemaakt?",  type:"jn",     req:true,  proj:true},
   {id:"hulpstuk",   n:10, label:"Hulpstuk Leverancier",type:"select", req:true, opts:HULPSTUKLEV},
   {id:"lasnummer",  n:11, label:"Lasnummer",          type:"text",   req:false, hint:"De las waar dit borgingsdocument over gaat."}
 ];
@@ -454,20 +453,20 @@ const B5_PROJ = [
   {id:"plaats",    label:"Project plaats"},
   {id:"lasser",    label:"Naam PE lasser"},
   {id:"lth",       label:"Naam LTH"},
-  {id:"lthAanwezig", label:"LTH aanwezig?", nonum:true},
-  {id:"proeflas",    label:"Proeflas gemaakt?", nonum:true}
+  {id:"lthAanwezig", label:"LTH aanwezig?", nonum:true}
 ];
 const SOORTEN = ["Stuiklas","Elektrolas"];
 const DOOR    = ["PE lasser","LTH"];
-function blankLas(){ return {nr:"", soort:[], visueel:"", door:[], fotos:[], opm:""}; }
+function blankLas(){ return {nr:"", proeflas:"nee", soort:[], visueel:"", door:[], fotos:[], opm:""}; }
 /* "Gecontroleerd door" mag PE lasser én LTH zijn; oude formulieren hebben één tekst */
 function doorArr(l){ const d = l && l.door; return Array.isArray(d) ? d.slice() : (d ? [d] : []); }
+function proefVan(l, r){ return l && l.proeflas != null ? l.proeflas : ((r && r.proeflas) || ""); }
 function doorTxt(l, sep){ return doorArr(l).join(sep || ", "); }
 function lasFilled(l){ return !!(l && (String(l.nr||"").trim() || (l.soort||[]).length || l.visueel || doorArr(l).length || (l.fotos||[]).length || String(l.opm||"").trim())); }
 /* Lasnummer(s) voor Bijlage 4: afgelezen uit de lassen van Bijlage 5 */
 function lasNrs(r){ return (r.lassen5||[]).map(l => String(l.nr||"").trim()).filter(Boolean).join(", "); }
 function cleanLassen(arr){
-  return (arr||[]).map(l => ({nr:String(l.nr||""), soort:(l.soort||[]).slice(), visueel:l.visueel||"", door:doorArr(l), fotos:(l.fotos||[]).slice(), opm:String(l.opm||"")}));
+  return (arr||[]).map(l => ({nr:String(l.nr||""), proeflas:l.proeflas == null ? "nee" : l.proeflas, soort:(l.soort||[]).slice(), visueel:l.visueel||"", door:doorArr(l), fotos:(l.fotos||[]).slice(), opm:String(l.opm||"")}));
 }
 
 const FOOTER_TXT = "De betreffende PE lasser is verantwoordelijk voor het correct vullen van dit borgingsdocument. " +
@@ -499,7 +498,6 @@ function blankModel(){
   CHECKS.forEach(c => m[c.id] = "");
   m.verklaring = "";
   m.lassen5 = [blankLas()];
-  m.proeflas = "nee";   // standaard: geen proeflas
   m.lthAanwezig = "nee"; // standaard: LTH niet aanwezig
   m.datum = new Date().toISOString().slice(0,10);
   return m;
@@ -556,7 +554,8 @@ function loadDraft(){
       if(d && typeof d === "object"){
         model = Object.assign(blankModel(), d);
         if(!Array.isArray(model.lassen5) || !model.lassen5.length) model.lassen5 = [blankLas()];
-        model.lassen5.forEach(l => { delete l._busy; if(!Array.isArray(l.fotos)) l.fotos = []; if(!Array.isArray(l.soort)) l.soort = []; });
+        model.lassen5.forEach(l => { delete l._busy; if(!Array.isArray(l.fotos)) l.fotos = []; if(!Array.isArray(l.soort)) l.soort = []; if(l.proeflas == null) l.proeflas = model.proeflas || "nee"; });
+        delete model.proeflas;
         Object.keys(model.fotos||{}).forEach(k => { if(k.indexOf("_busy_") === 0) delete model.fotos[k]; });
       }
     }
@@ -900,6 +899,13 @@ function lasHtml(l, i){
         <div class="err-msg">Vul bij minimaal één las een lasnummer in.</div>
       </div>
       <div class="field">
+        <div class="q">Betreft dit een proeflas?</div>
+        <div class="jn">
+          <button type="button" data-l5proef="${i}" data-val="ja"  data-on="${l.proeflas==="ja"?1:0}"><span class="dot"></span>Ja</button>
+          <button type="button" data-l5proef="${i}" data-val="nee" data-on="${l.proeflas==="nee"?1:0}"><span class="dot"></span>Nee</button>
+        </div>
+      </div>
+      <div class="field">
         <div class="q">${nr(base+1)}Soort las</div>
         <p class="hint">Meerdere keuzes mogelijk.</p>
         <div class="opts">${SOORTEN.map(x => `<button type="button" data-l5soort="${i}" data-val="${esc(x)}" data-on="${soort.indexOf(x) >= 0 ? 1 : 0}">${esc(x)}</button>`).join("")}</div>
@@ -1028,7 +1034,7 @@ function renderDetail(){
   const b4gegevens = TEXTFIELDS.filter(f => !f.proj).map(f => row(f.label, esc(r[f.id]||""))).join("");
   const l5 = (r.lassen5||[]).filter(lasFilled).map((l, i) => `<div class="field" style="padding:12px 0">
       <div style="font-weight:650">Las ${i+1}${l.nr ? " &middot; nr. " + esc(l.nr) : ""}</div>
-      <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Soort: ${esc((l.soort||[]).join(", ") || "—")} &middot; Visueel voldoet: ${jn(l.visueel)} &middot; Gecontroleerd door: ${esc(doorTxt(l) || "—")}</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Proeflas: ${jn(proefVan(l, r))} &middot; Soort: ${esc((l.soort||[]).join(", ") || "—")} &middot; Visueel voldoet: ${jn(l.visueel)} &middot; Gecontroleerd door: ${esc(doorTxt(l) || "—")}</div>
       ${l.opm ? `<div style="white-space:pre-wrap;margin-top:6px;font-size:14px">${esc(l.opm)}</div>` : ""}
       ${(l.fotos||[]).length ? `<div class="thumbs" style="margin-top:9px">${l.fotos.map(id => `<div class="thumb"><img src="${blobUrl(id)}" alt=""></div>`).join("")}</div>` : ""}
     </div>`).join("") || `<p class="hint" style="margin-top:10px">Geen lassen ingevuld.</p>`;
@@ -1255,7 +1261,7 @@ async function exportCsv(){
   const cols = TEXTFIELDS.map(f => f.id).concat(CHECKS.map(c => c.id), ["verklaring","status","_l5"]);
   const head = TEXTFIELDS.map(f => f.label).concat(CHECKS.map(c => c.n + ". " + c.q), ["Verklaring","Status","Bijlage 5 lassen"]);
   const l5txt = r => (r.lassen5||[]).filter(lasFilled).map(l =>
-    `Las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"-"}, visueel ${l.visueel||"-"}, door ${doorTxt(l, "/")||"-"}, ${(l.fotos||[]).length} foto('s)${l.opm ? ", " + l.opm : ""}`).join(" | ");
+    `Las ${l.nr||"?"}: proeflas ${proefVan(l, r)||"-"}, ${(l.soort||[]).join("/")||"-"}, visueel ${l.visueel||"-"}, door ${doorTxt(l, "/")||"-"}, ${(l.fotos||[]).length} foto('s)${l.opm ? ", " + l.opm : ""}`).join(" | ");
   const q = v => '"' + String(v==null?"":v).replace(/"/g,'""') + '"';
   const csv = "\uFEFF" + [head.map(q).join(";")].concat(
     records.map(r => cols.map(c => q(c === "_l5" ? l5txt(r) : r[c])).join(";"))
@@ -1451,6 +1457,7 @@ async function makePdf(r){
     k.row(`${f.n ? f.n + ". " : ""}${f.label}`,
       f.type === "date" ? nlDate(r[f.id]) : f.type === "jn" ? jnTxt(r[f.id]) : r[f.id]);
     if(f.id === "lasser") k.row("Nummer PE lasser", lasserNr(r.lasser, r._soort));
+    if(f.id === "lasnummer") k.row("Betreft dit een proeflas?", jnTxt(r._proeflas));
   });
 
   k.head("Controlepunten");
@@ -1486,18 +1493,22 @@ async function makePdf(r){
 async function makePdf5(r){
   const k = await newPdf('NTA 8828 Bijlage 5 — PE Lasdocument', r);
   k.head("Algemene gegevens");
-  B5_PROJ.forEach((f, i) => k.row(`${f.nonum ? "" : (i+1) + ". "}${f.label}`,
-    f.id === "datum" ? nlDate(r.datum) : f.nonum ? jnTxt(r[f.id]) : r[f.id]));
-
   const lassen = (r.lassen5 || []).filter(lasFilled);
+  const alleSoorten = [].concat(...lassen.map(l => l.soort || [])).filter((x, i, a) => a.indexOf(x) === i);
+  B5_PROJ.forEach((f, i) => {
+    k.row(`${f.nonum ? "" : (i+1) + ". "}${f.label}`,
+      f.id === "datum" ? nlDate(r.datum) : f.nonum ? jnTxt(r[f.id]) : r[f.id]);
+    if(f.id === "lasser") k.row("Nummer PE lasser", lasserNr(r.lasser, alleSoorten));
+  });
+
   if(!lassen.length){ k.head("Lasgegevens per las van het project"); k.row("—", "Geen lassen ingevuld."); }
   for(let i = 0; i < lassen.length; i++){
     const l = lassen[i], base = 8 + i * 6, fotos = l.fotos || [];
     k.need(fotos.length ? 112 : 58);   // las + eerste fotorij bij elkaar houden
     k.head(`Lasgegevens per las van het project — las ${i+1}`);
     k.row(`${base}. Lasnummer`, l.nr);
+    k.row("Betreft dit een proeflas?", jnTxt(proefVan(l, r)));
     k.row(`${base+1}. Soort las`, (l.soort || []).join(", "));
-    k.row("Nummer PE lasser", lasserNr(r.lasser, l.soort));
     k.row(`${base+2}. Visuele beoordeling voldoet`, l.visueel === "ja" ? "JA" : l.visueel === "nee" ? "NEE" : "—");
     k.row(`${base+3}. Gecontroleerd door`, doorTxt(l));
     k.row(`${base+4}. Foto's`, fotos.length ? `${fotos.length} foto${fotos.length > 1 ? "'s" : ""} — zie hieronder` : "");
@@ -1528,7 +1539,6 @@ function mailParts(r, asImages){
     `PE lasser     : ${r.lasser||"—"}`,
     `LTH           : ${r.lth||"—"}`,
     `LTH aanwezig  : ${jnTxt(r.lthAanwezig)}`,
-    `Proeflas      : ${jnTxt(r.proeflas)}`,
     `Lasnummer     : ${r.lasnummer||"—"}`,
     `Buisleverancier: ${r.buislev||"—"}`,
     `Hulpstukleverancier: ${r.hulpstuk||"—"}`,
@@ -1536,7 +1546,7 @@ function mailParts(r, asImages){
     anyNee(r) ? `Let op: één of meer controlepunten zijn met NEE beantwoord. Verklaring:\n${r.verklaring||""}` : "Alle controlepunten zijn akkoord.",
     "",
     `Bijlage 5 — ${lassen.length} las(sen):`,
-    ...lassen.map(l => `- las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"soort ?"}${lasserNr(r.lasser, l.soort) ? " (nr. " + lasserNr(r.lasser, l.soort) + ")" : ""}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${doorTxt(l)||"—"}`),
+    ...lassen.map(l => `- las ${l.nr||"?"} (proeflas: ${jnTxt(proefVan(l, r))}): ${(l.soort||[]).join("/")||"soort ?"}${lasserNr(r.lasser, l.soort) ? " (nr. " + lasserNr(r.lasser, l.soort) + ")" : ""}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${doorTxt(l)||"—"}`),
     anyL5Nee(r) ? "Let op: bij één of meer lassen voldoet de visuele beoordeling NIET." : "",
     "",
     "Met vriendelijke groet,"
@@ -1551,7 +1561,7 @@ function shortBody(r, asImages){
     `- NTA 8828 Bijlage 4 (lasborging), per las: ${lasNrs(r) ? "lasnr. " + lasNrs(r) : "1 document"}`,
     "- NTA 8828 Bijlage 5 (lasdocument)", "",
     `Project ${r.projectnr||"—"}, ${nlDate(r.datum)}, ${[r.adres, r.plaats].filter(Boolean).join(", ")||"—"}`,
-    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"} (aanwezig: ${jnTxt(r.lthAanwezig)})  |  Proeflas: ${jnTxt(r.proeflas)}`,
+    `PE lasser: ${r.lasser||"—"}  |  LTH: ${r.lth||"—"} (aanwezig: ${jnTxt(r.lthAanwezig)})`,
     (anyNee(r) || anyL5Nee(r)) ? "Let op: er is minimaal één punt met NEE beantwoord, zie de bijlagen." : "",
     "", "Met vriendelijke groet,"
   ].join("\n");
@@ -1748,9 +1758,10 @@ async function pdfAndMail(r, alsoMail){
     const nrs = (r.lassen5||[]).filter(lasFilled).map(l => String(l.nr||"").trim()).filter(Boolean);
     const lsn = (r.lassen5||[]).filter(lasFilled);
     const allSoort = [].concat(...lsn.map(l => l.soort || [])).filter((x, i, a) => a.indexOf(x) === i);
-    const soortVan = nr => { const l = lsn.find(x => String(x.nr||"").trim() === nr); return l ? (l.soort || []) : []; };
-    const b4 = nrs.length ? nrs.map(nr => Object.assign({}, r, {lasnummer: nr, _soort: soortVan(nr)}))
-                          : [Object.assign({}, r, {lasnummer: "", _soort: allSoort})];
+    const lasVan = nr => lsn.find(x => String(x.nr||"").trim() === nr);
+    const soortVan = nr => { const l = lasVan(nr); return l ? (l.soort || []) : []; };
+    const b4 = nrs.length ? nrs.map(nr => Object.assign({}, r, {lasnummer: nr, _soort: soortVan(nr), _proeflas: proefVan(lasVan(nr), r)}))
+                          : [Object.assign({}, r, {lasnummer: "", _soort: allSoort, _proeflas: proefVan(lsn[0], r)})];
     docs = [];
     const used = {};
     for(const x of b4){
@@ -1869,6 +1880,12 @@ document.addEventListener("click", async e => {
   const cp = t.getAttribute("data-copy");
   if(cp){ copyField(cp, t); return; }
   // Bijlage 5: per las
+  const l5proef = t.getAttribute("data-l5proef");
+  if(l5proef != null){
+    const las = model.lassen5[+l5proef], v = t.getAttribute("data-val");
+    if(las){ las.proeflas = v; saveDraft(); renderForm(); }
+    return;
+  }
   const l5jn = t.getAttribute("data-l5jn");
   if(l5jn != null){
     const las = model.lassen5[+l5jn], v = t.getAttribute("data-val");
