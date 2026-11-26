@@ -384,6 +384,19 @@ input[type="file"]{display:none}
    Formulierdefinitie — 1:1 met Bijlage 4
    ============================================================ */
 const LASSERS = ["Martin de Haan","Ronnie Terweij"];
+/* Nummer PE lasser: hangt af van de lasser en de soort las (stuiklas / elektrolas) */
+const LASSER_NRS = {
+  "Ronnie Terweij": {"Stuiklas": "QSC-241320277-03", "Elektrolas": "Q16415"},
+  "Martin de Haan": {"Stuiklas": "QSC-241320277-04", "Elektrolas": "Q16414"}
+};
+// geeft bv. "Q16415" of, bij beide soorten, "QSC-241320277-03 (stuiklas), Q16415 (elektrolas)"
+function lasserNr(lasser, soorten){
+  const map = LASSER_NRS[lasser]; if(!map) return "";
+  const list = (soorten || []).filter(x => map[x]).sort((a, b) => SOORTEN.indexOf(a) - SOORTEN.indexOf(b));
+  if(!list.length) return "";
+  if(list.length === 1) return map[list[0]];
+  return list.map(x => `${map[x]} (${x.toLowerCase()})`).join(", ");
+}
 const BUISLEV = ["Wavin","George Fisher (GF)"];
 const REGIOS  = ["Noord-Holland","Zuid-Holland","Amsterdam"];
 const HULPSTUKLEV = ["George Fisher (GF)","Frialen"];
@@ -487,6 +500,7 @@ function blankModel(){
   m.verklaring = "";
   m.lassen5 = [blankLas()];
   m.proeflas = "nee";   // standaard: geen proeflas
+  m.lthAanwezig = "nee"; // standaard: LTH niet aanwezig
   m.datum = new Date().toISOString().slice(0,10);
   return m;
 }
@@ -853,6 +867,17 @@ function nrOptions(){
 }
 function refreshNrList(){ const dl = $("#l5nrs"); if(dl) dl.innerHTML = nrOptions(); }
 
+function lasnrHint(l){
+  const n = lasserNr(model.lasser, l.soort);
+  return n ? `Nummer PE lasser: <strong>${esc(n)}</strong>` : "";
+}
+function refreshLasNrs(){
+  document.querySelectorAll("[data-lasnr]").forEach(el => {
+    const l = model.lassen5[+el.getAttribute("data-lasnr")];
+    if(l) el.innerHTML = lasnrHint(l);
+  });
+}
+
 function grpHtml(title, sub){
   return `<div class="grp"><h2>${esc(title)}</h2>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
 }
@@ -878,6 +903,7 @@ function lasHtml(l, i){
         <div class="q">${nr(base+1)}Soort las</div>
         <p class="hint">Meerdere keuzes mogelijk.</p>
         <div class="opts">${SOORTEN.map(x => `<button type="button" data-l5soort="${i}" data-val="${esc(x)}" data-on="${soort.indexOf(x) >= 0 ? 1 : 0}">${esc(x)}</button>`).join("")}</div>
+        <p class="hint lasnr" data-lasnr="${i}" style="margin:8px 0 0">${lasnrHint(l)}</p>
       </div>
       <div class="field">
         <div class="q">${nr(base+2)}Visuele beoordeling voldoet</div>
@@ -950,7 +976,7 @@ function renderForm(){
           : "Indien op één van bovenstaande vragen het antwoord NEE is, dan een verklaring geven."}</p>
         <textarea data-f="verklaring" placeholder="Toelichting…">${esc(model.verklaring)}</textarea>
         <div class="err-msg">Een verklaring is verplicht omdat er 'Nee' is geantwoord.</div>
-      </div>` + lthSigHtml()),
+      </div>` + (model.lthAanwezig === "ja" ? lthSigHtml() : "")),
     `<p class="hint" style="margin:16px 2px 0;font-style:italic">${esc(FOOTER_TXT)}</p>`,
     grpHtml("NTA 8828 Bijlage 5 · Lasdocument", "eigen PDF — lasgegevens per las"),
     model.lassen5.map(lasHtml).join(""),
@@ -1183,7 +1209,8 @@ async function save(){
   if(!db){ flash("Opslaan is hier niet beschikbaar — gebruik Print om het formulier vast te leggen.", "err", 6000); return; }
   const btn = $("#btnSave"); if(btn){ btn.disabled = true; btn.textContent = "Opslaan…"; }
   try{
-    if(!model.paraaf){ const sid = await uploadSignature("sig", "paraaf-lth.png"); if(sid) model.paraaf = sid; }
+    if(model.lthAanwezig !== "ja") model.paraaf = null;   // LTH niet aanwezig: geen paraaf
+    else if(!model.paraaf){ const sid = await uploadSignature("sig", "paraaf-lth.png"); if(sid) model.paraaf = sid; }
     if(!model.handtekening){ const hid = await uploadSignature("sig2", "handtekening-lasser.png"); if(hid) model.handtekening = hid; }
     const fotos = {};
     PHOTOS.forEach(p => { if(model.fotos[p.key]) fotos[p.key] = model.fotos[p.key]; });
@@ -1420,8 +1447,11 @@ async function makePdf(r){
   const doc = k.doc, M = k.M, CW = k.CW;
 
   k.head("Algemene gegevens");
-  TEXTFIELDS.forEach(f => k.row(`${f.n ? f.n + ". " : ""}${f.label}`,
-    f.type === "date" ? nlDate(r[f.id]) : f.type === "jn" ? jnTxt(r[f.id]) : r[f.id]));
+  TEXTFIELDS.forEach(f => {
+    k.row(`${f.n ? f.n + ". " : ""}${f.label}`,
+      f.type === "date" ? nlDate(r[f.id]) : f.type === "jn" ? jnTxt(r[f.id]) : r[f.id]);
+    if(f.id === "lasser") k.row("Nummer PE lasser", lasserNr(r.lasser, r._soort));
+  });
 
   k.head("Controlepunten");
   CHECKS.forEach(c => k.row(`${c.n}. ${c.q}`, r[c.id] === "ja" ? "JA" : r[c.id] === "nee" ? "NEE" : "—", c.hint || ""));
@@ -1441,7 +1471,8 @@ async function makePdf(r){
   // handtekening PE lasser (links) en paraaf LTH (rechts)
   k.need(38);
   const h1 = await k.sigAt(M, r.handtekening, `Handtekening PE lasser (NTA 8828) — ${r.lasser || ""}`);
-  const h2 = await k.sigAt(M + CW / 2 + 4, r.paraaf, `Paraaf LTH — ${r.lth || ""}`);
+  // paraaf LTH alleen als de LTH aanwezig was
+  const h2 = r.lthAanwezig === "ja" ? await k.sigAt(M + CW / 2 + 4, r.paraaf, `Paraaf LTH — ${r.lth || ""}`) : 0;
   k.y += Math.max(h1, h2);
 
   k.need(16); k.setN(7.5, false); doc.setTextColor(90);
@@ -1466,6 +1497,7 @@ async function makePdf5(r){
     k.head(`Lasgegevens per las van het project — las ${i+1}`);
     k.row(`${base}. Lasnummer`, l.nr);
     k.row(`${base+1}. Soort las`, (l.soort || []).join(", "));
+    k.row("Nummer PE lasser", lasserNr(r.lasser, l.soort));
     k.row(`${base+2}. Visuele beoordeling voldoet`, l.visueel === "ja" ? "JA" : l.visueel === "nee" ? "NEE" : "—");
     k.row(`${base+3}. Gecontroleerd door`, doorTxt(l));
     k.row(`${base+4}. Foto's`, fotos.length ? `${fotos.length} foto${fotos.length > 1 ? "'s" : ""} — zie hieronder` : "");
@@ -1504,7 +1536,7 @@ function mailParts(r, asImages){
     anyNee(r) ? `Let op: één of meer controlepunten zijn met NEE beantwoord. Verklaring:\n${r.verklaring||""}` : "Alle controlepunten zijn akkoord.",
     "",
     `Bijlage 5 — ${lassen.length} las(sen):`,
-    ...lassen.map(l => `- las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"soort ?"}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${doorTxt(l)||"—"}`),
+    ...lassen.map(l => `- las ${l.nr||"?"}: ${(l.soort||[]).join("/")||"soort ?"}${lasserNr(r.lasser, l.soort) ? " (nr. " + lasserNr(r.lasser, l.soort) + ")" : ""}, visueel voldoet: ${l.visueel ? l.visueel.toUpperCase() : "—"}, gecontroleerd door: ${doorTxt(l)||"—"}`),
     anyL5Nee(r) ? "Let op: bij één of meer lassen voldoet de visuele beoordeling NIET." : "",
     "",
     "Met vriendelijke groet,"
@@ -1526,13 +1558,12 @@ function shortBody(r, asImages){
 }
 function mailtoUrl(r, asImages){
   const {sub} = mailParts(r, asImages);
-  const cc = r.lthmail ? `&cc=${encodeURIComponent(r.lthmail)}` : "";
-  return `mailto:${MAIL_TO}?subject=${encodeURIComponent(sub)}${cc}&body=${encodeURIComponent(shortBody(r, asImages))}`;
+  return `mailto:${MAIL_TO}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(shortBody(r, asImages))}`;
 }
 function fillMailBox(r, asImages){
   const {sub, body} = mailParts(r, asImages);
-  const e = encodeURIComponent, cc = r.lthmail || "";
-  $("#mTo").value = MAIL_TO + (cc ? "; " + cc : "");
+  const e = encodeURIComponent, cc = "";   // LTH niet in CC; mailadres staat alleen op de PDF's
+  $("#mTo").value = MAIL_TO;
   $("#mSub").value = sub;
   $("#mBody").value = body;
   $("#mOutlook").setAttribute("href", `https://outlook.office.com/mail/deeplink/compose?to=${e(MAIL_TO)}${cc ? "&cc=" + e(cc) : ""}&subject=${e(sub)}&body=${e(body)}`);
@@ -1692,7 +1723,7 @@ function sharePending(){
   const {r, items} = pending;
   const {sub, body} = mailParts(r);
   copyText(MAIL_TO).catch(()=>{});
-  const extra = r.lthmail ? `\nCC: ${r.lthmail}` : "";
+  const extra = "";
   // direct in de klik aanroepen, anders blokkeert de browser het delen
   navigator.share({files: items.map(it => it.file), title: sub, text: `Aan: ${MAIL_TO}${extra}\nOnderwerp: ${sub}\n\n${body}`})
     .then(() => { $("#mailModal").hidden = true; flash("Gedeeld. Controleer in je mail-app of het adres goed staat en verstuur.", "ok", 6000); })
@@ -1707,7 +1738,7 @@ async function pdfAndMail(r, alsoMail){
   if(!r){ flash("Er is niets om te verwerken.", "err"); return; }
   // vanuit het formulier: paraaf direct van het tekenvlak meenemen
   if(r === model) r = Object.assign({}, model, {
-    paraaf: model.paraaf || sigPngDataUrl("sig"),
+    paraaf: model.lthAanwezig === "ja" ? (model.paraaf || sigPngDataUrl("sig")) : null,
     handtekening: model.handtekening || sigPngDataUrl("sig2")
   });
   flash("PDF's worden opgebouwd…", "warn", 30000);
@@ -1715,7 +1746,11 @@ async function pdfAndMail(r, alsoMail){
   try{
     // per las een eigen Bijlage 4 (zelfde antwoorden, ander lasnummer), plus één Bijlage 5
     const nrs = (r.lassen5||[]).filter(lasFilled).map(l => String(l.nr||"").trim()).filter(Boolean);
-    const b4 = nrs.length ? nrs.map(nr => Object.assign({}, r, {lasnummer: nr})) : [Object.assign({}, r, {lasnummer: ""})];
+    const lsn = (r.lassen5||[]).filter(lasFilled);
+    const allSoort = [].concat(...lsn.map(l => l.soort || [])).filter((x, i, a) => a.indexOf(x) === i);
+    const soortVan = nr => { const l = lsn.find(x => String(x.nr||"").trim() === nr); return l ? (l.soort || []) : []; };
+    const b4 = nrs.length ? nrs.map(nr => Object.assign({}, r, {lasnummer: nr, _soort: soortVan(nr)}))
+                          : [Object.assign({}, r, {lasnummer: "", _soort: allSoort})];
     docs = [];
     const used = {};
     for(const x of b4){
@@ -1787,6 +1822,7 @@ document.addEventListener("input", e => {
       const oth = document.querySelector(`[data-f="${f}"][data-other]`);
       if(oth){ oth.style.display = "none"; oth.value = ""; }
     }
+    if(f === "lasser") refreshLasNrs();
     // LTH gekozen: mailadres automatisch invullen (of wissen bij "Anders…")
     if(f === "lth"){
       const known = Object.values(LTH_MAIL);
